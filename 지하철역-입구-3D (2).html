@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>지하철역 입구 3D</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #87b7e6;
+      font-family: sans-serif;
+    }
+    #ui {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      color: #fff;
+      background: rgba(0,0,0,0.45);
+      padding: 10px 12px;
+      border-radius: 10px;
+      line-height: 1.5;
+      font-size: 14px;
+      user-select: none;
+    }
+    #ui b { color: #ffe08a; }
+    #message {
+      position: fixed;
+      left: 50%;
+      top: 18px;
+      transform: translateX(-50%);
+      z-index: 15;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 12px 18px;
+      border-radius: 999px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      display: none;
+      user-select: none;
+      pointer-events: none;
+    }
+    #startOverlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.35);
+      z-index: 20;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    #startOverlay .box {
+      background: rgba(0, 0, 0, 0.55);
+      padding: 24px 28px;
+      border-radius: 16px;
+      max-width: 520px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+    #startOverlay h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+    #startOverlay p {
+      margin: 8px 0;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    #startOverlay .hint {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div><b>WASD</b> 이동</div>
+    <div><b>마우스</b> 시점 회전</div>
+    <div>휠체어 시점 높이: <b>100cm</b></div>
+    <div>계단 단차: <b>10cm</b></div>
+    <div>파란 미끄러운 바닥: <b>제거됨</b></div>
+  </div>
+  <div id="message">장애물에 닿았습니다. 다른 길을 찾아보세요.</div>
+  <div id="startOverlay">
+    <div class="box">
+      <h1>지하철역 입구로 들어가기</h1>
+      <p>1인칭 시점에서 휠체어 사용자의 높이로 이동합니다.</p>
+      <p class="hint">클릭 후 마우스로 시점을 돌리고, WASD로 이동하세요.</p>
+      <p class="hint">ESC로 마우스 잠금을 해제할 수 있습니다.</p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+  <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x8ec5ff);
+    scene.fog = new THREE.Fog(0x8ec5ff, 8, 60);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
+    const PLAYER_HEIGHT = 1.0;
+    camera.position.set(0, PLAYER_HEIGHT, 8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x4b4b4b, 1.2);
+    scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(10, 20, 10);
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 60;
+    sun.shadow.camera.left = -20;
+    sun.shadow.camera.right = 20;
+    sun.shadow.camera.top = 20;
+    sun.shadow.camera.bottom = -20;
+    scene.add(sun);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.MeshStandardMaterial({ color: 0x5f8d4e, roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const path = new THREE.Mesh(
+      new THREE.BoxGeometry(8, 0.05, 18),
+      new THREE.MeshStandardMaterial({ color: 0x9c9c9c, roughness: 1 })
+    );
+    path.position.set(0, 0.025, 0);
+    path.receiveShadow = true;
+    scene.add(path);
+
+    const curb = new THREE.Mesh(
+      new THREE.BoxGeometry(9.2, 0.15, 18.2),
+      new THREE.MeshStandardMaterial({ color: 0xbdbdbd, roughness: 1 })
+    );
+    curb.position.set(0, 0.075, 0);
+    curb.receiveShadow = true;
+    scene.add(curb);
+
+    const entranceGroup = new THREE.Group();
+    entranceGroup.position.set(0, 0, -8);
+    scene.add(entranceGroup);
+
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xdadada, roughness: 0.95 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x2c2c2c, roughness: 1 });
+
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.6, 4, 6), wallMat);
+    leftWall.position.set(-2.8, 2, 0);
+    leftWall.castShadow = true;
+    leftWall.receiveShadow = true;
+    entranceGroup.add(leftWall);
+
+    const rightWall = leftWall.clone();
+    rightWall.position.x = 2.8;
+    entranceGroup.add(rightWall);
+
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.5, 6.2), wallMat);
+    roof.position.set(0, 4.25, 0);
+    roof.castShadow = true;
+    roof.receiveShadow = true;
+    entranceGroup.add(roof);
+
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(5.6, 4, 0.6), darkMat);
+    backWall.position.set(0, 2, -2.8);
+    backWall.castShadow = true;
+    backWall.receiveShadow = true;
+    entranceGroup.add(backWall);
+
+    const startFrontGroup = new THREE.Group();
+    startFrontGroup.position.set(0, 0, 4.3);
+    scene.add(startFrontGroup);
+
+    const stairGroup = new THREE.Group();
+    stairGroup.position.set(0, 0, 1.85);
+    startFrontGroup.add(stairGroup);
+
+    const stepWidth = 5.2;
+    const stepDepth = 0.18;
+    const stepHeight = 0.1;
+    const stepCount = 3;
+
+    for (let i = 0; i < stepCount; i++) {
+      const step = new THREE.Mesh(
+        new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth),
+        new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0x8a8a8a : 0x7d7d7d, roughness: 1 })
+      );
+      step.position.set(0, stepHeight / 2 + i * stepHeight, -i * stepDepth);
+      step.castShadow = true;
+      step.receiveShadow = true;
+      stairGroup.add(step);
+    }
+
+    const landing = new THREE.Mesh(
+      new THREE.BoxGeometry(stepWidth, 0.1, 2),
+      new THREE.MeshStandardMaterial({ color: 0x6f6f6f, roughness: 1 })
+    );
+    landing.position.set(0, stepCount * stepHeight + 0.05, -stepCount * stepDepth - 0.85);
+    landing.castShadow = true;
+    landing.receiveShadow = true;
+    stairGroup.add(landing);
+
+    const ramp = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.08, 2.8),
+      new THREE.MeshStandardMaterial({ color: 0x7d8b95, roughness: 0.95 })
+    );
+    ramp.position.set(-4.2, 0.24, 1.1);
+    ramp.rotation.z = -0.18;
+    ramp.castShadow = true;
+    ramp.receiveShadow = true;
+    startFrontGroup.add(ramp);
+
+    const rampSide = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.55, 2.8),
+      new THREE.MeshStandardMaterial({ color: 0x58656e, roughness: 0.9 })
+    );
+    rampSide.position.set(-4.95, 0.28, 1.1);
+    rampSide.rotation.z = -0.18;
+    rampSide.castShadow = true;
+    startFrontGroup.add(rampSide);
+
+    const scooter = new THREE.Group();
+    scooter.position.set(0.8, 0.0, 1.05);
+    scooter.rotation.y = -0.65;
+    startFrontGroup.add(scooter);
+
+    const scooterFrameMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.55 });
+    const scooterAccentMat = new THREE.MeshStandardMaterial({ color: 0xffb000, roughness: 0.45 });
+    const scooterWheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1 });
+
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.2), scooterFrameMat);
+    deck.position.set(0, 0.42, 0);
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    scooter.add(deck);
+
+    const stem = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.05, 0.08), scooterFrameMat);
+    stem.position.set(-0.38, 0.98, 0);
+    stem.rotation.z = -0.12;
+    stem.castShadow = true;
+    scooter.add(stem);
+
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.06, 0.06), scooterAccentMat);
+    handle.position.set(-0.5, 1.5, 0);
+    handle.castShadow = true;
+    scooter.add(handle);
+
+    const frontFork = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.38, 0.06), scooterFrameMat);
+    frontFork.position.set(0.42, 0.2, 0);
+    frontFork.rotation.z = 0.25;
+    frontFork.castShadow = true;
+    scooter.add(frontFork);
+
+    const frontWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 18), scooterWheelMat);
+    frontWheel.rotation.z = Math.PI / 2;
+    frontWheel.position.set(0.55, 0.08, 0);
+    frontWheel.castShadow = true;
+    scooter.add(frontWheel);
+
+    const rearWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 18), scooterWheelMat);
+    rearWheel.rotation.z = Math.PI / 2;
+    rearWheel.position.set(-0.4, 0.08, 0);
+    rearWheel.castShadow = true;
+    scooter.add(rearWheel);
+
+    const battery = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.14), scooterAccentMat);
+    battery.position.set(0.05, 0.52, 0);
+    battery.castShadow = true;
+    scooter.add(battery);
+
+    const messageEl = document.getElementById('message');
+    let messageTimer = null;
+
+    const keys = { w: false, a: false, s: false, d: false };
+    let yaw = 0;
+    let pitch = 0;
+    const speed = 0.08;
+    const playerRadius = 0.35;
+
+    function vec2Distance(ax, az, bx, bz) {
+      const dx = ax - bx;
+      const dz = az - bz;
+      return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyW') keys.w = true;
+      if (e.code === 'KeyA') keys.a = true;
+      if (e.code === 'KeyS') keys.s = true;
+      if (e.code === 'KeyD') keys.d = true;
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyW') keys.w = false;
+      if (e.code === 'KeyA') keys.a = false;
+      if (e.code === 'KeyS') keys.s = false;
+      if (e.code === 'KeyD') keys.d = false;
+    });
+
+    const overlay = document.getElementById('startOverlay');
+    overlay.addEventListener('click', () => {
+      if (document.body.requestPointerLock) document.body.requestPointerLock();
+      overlay.style.display = 'none';
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      overlay.style.display = document.pointerLockElement ? 'none' : 'flex';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement) {
+        yaw -= e.movementX * 0.002;
+        pitch -= e.movementY * 0.002;
+        pitch = Math.max(-1.2, Math.min(1.2, pitch));
+      }
+    });
+
+    function showMessage(text) {
+      messageEl.textContent = text;
+      messageEl.style.display = 'block';
+      clearTimeout(messageTimer);
+      messageTimer = setTimeout(() => {
+        messageEl.style.display = 'none';
+      }, 1400);
+    }
+
+    function updateMovement() {
+      const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw) * -1);
+      const right = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw));
+
+      const next = camera.position.clone();
+      if (keys.w) next.addScaledVector(forward, speed);
+      if (keys.s) next.addScaledVector(forward, -speed);
+      if (keys.a) next.addScaledVector(right, -speed);
+      if (keys.d) next.addScaledVector(right, speed);
+
+      const scooterPos = new THREE.Vector3();
+      const stepPos = new THREE.Vector3();
+      scooter.getWorldPosition(scooterPos);
+      stairGroup.getWorldPosition(stepPos);
+
+      const hitStep = vec2Distance(next.x, next.z, stepPos.x, stepPos.z) < 1.9;
+      const hitScooter = vec2Distance(next.x, next.z, scooterPos.x, scooterPos.z) < playerRadius + 0.8;
+
+      if (hitStep || hitScooter) {
+        showMessage('장애물에 닿았습니다. 다른 길을 찾아보세요.');
+        camera.position.y = PLAYER_HEIGHT;
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw;
+        camera.rotation.x = pitch;
+        return;
+      }
+
+      camera.position.x = THREE.MathUtils.clamp(next.x, -20, 20);
+      camera.position.z = THREE.MathUtils.clamp(next.z, -40, 20);
+      camera.position.y = PLAYER_HEIGHT;
+
+      camera.rotation.order = 'YXZ';
+      camera.rotation.y = yaw;
+      camera.rotation.x = pitch;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      updateMovement();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
